@@ -35,4 +35,5 @@ export interface Result {
   grade: number;
   rank?: number;
   teacher?: string;
+  no?: number;
 }

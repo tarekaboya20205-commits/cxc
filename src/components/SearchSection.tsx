@@ -38,6 +38,7 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
         .from('results')
         .select('*')
         .ilike('name', `%${searchTerm.trim()}%`)
+        .order('grade', { ascending: false })
         .limit(1);
       
       if (error) {
@@ -50,13 +51,27 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
       console.log('Search completed, results:', data);
       
       if (data && data.length > 0) {
+        // حساب الترتيب للطالب
+        const { data: allResults, error: rankError } = await supabase
+          .from('results')
+          .select('no, grade')
+          .order('grade', { ascending: false });
+
+        let rank = 1;
+        if (!rankError && allResults) {
+          const studentResult = allResults.find(r => r.no === data[0].no);
+          if (studentResult) {
+            rank = allResults.findIndex(r => r.no === data[0].no) + 1;
+          }
+        }
+
         // تحويل بيانات Supabase إلى Result
         const result: Result = {
           id: data[0].no,
           name: data[0].name,
           category: data[0].category?.toString() || 'غير محدد',
           grade: data[0].grade || 0,
-          rank: 1, // سيتم حساب الترتيب لاحقاً
+          rank: rank,
           no: data[0].no
         };
         onSearch(result);
