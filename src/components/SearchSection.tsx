@@ -38,19 +38,23 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
         .from('results')
         .select('*')
         .ilike('name', `%${searchTerm.trim()}%`)
-        .order('grade', { ascending: false })
-        .limit(1);
+        .limit(10); // زيادة الحد للحصول على نتائج أكثر
       
       if (error) {
         console.error('Search error:', error);
-        setSearchError('حدث خطأ أثناء البحث');
+        setSearchError('حدث خطأ أثناء البحث: ' + error.message);
         onSearch(null);
         return;
       }
       
       console.log('Search completed, results:', data);
+      console.log('Number of results found:', data?.length || 0);
       
       if (data && data.length > 0) {
+        // أخذ أول نتيجة
+        const firstResult = data[0];
+        console.log('First result:', firstResult);
+        
         // حساب الترتيب للطالب
         const { data: allResults, error: rankError } = await supabase
           .from('results')
@@ -59,29 +63,54 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
 
         let rank = 1;
         if (!rankError && allResults) {
-          const studentResult = allResults.find(r => r.no === data[0].no);
-          if (studentResult) {
-            rank = allResults.findIndex(r => r.no === data[0].no) + 1;
-          }
+          const studentIndex = allResults.findIndex(r => r.no === firstResult.no);
+          rank = studentIndex >= 0 ? studentIndex + 1 : 1;
+          console.log('Calculated rank:', rank);
         }
 
         // تحويل بيانات Supabase إلى Result
         const result: Result = {
-          id: data[0].no,
-          name: data[0].name,
-          category: data[0].category?.toString() || 'غير محدد',
-          grade: data[0].grade || 0,
+          id: firstResult.no || firstResult.id || 0,
+          name: firstResult.name || 'غير محدد',
+          category: firstResult.category?.toString() || 'غير محدد',
+          grade: firstResult.grade || 0,
           rank: rank,
-          no: data[0].no
+          no: firstResult.no || firstResult.id || 0
         };
+        
+        console.log('Final result object:', result);
         onSearch(result);
       } else {
-        console.log('No results found');
-        onSearch(null);
+        console.log('No results found for search term:', searchTerm.trim());
+        
+        // محاولة البحث بدون حساسية للحروف الكبيرة والصغيرة
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('results')
+          .select('*')
+          .textSearch('name', searchTerm.trim());
+        
+        if (!fallbackError && fallbackData && fallbackData.length > 0) {
+          console.log('Found results with text search:', fallbackData);
+          const firstResult = fallbackData[0];
+          
+          const result: Result = {
+            id: firstResult.no || firstResult.id || 0,
+            name: firstResult.name || 'غير محدد',
+            category: firstResult.category?.toString() || 'غير محدد',
+            grade: firstResult.grade || 0,
+            rank: 1,
+            no: firstResult.no || firstResult.id || 0
+          };
+          
+          onSearch(result);
+        } else {
+          console.log('No results found even with fallback search');
+          onSearch(null);
+        }
       }
     } catch (error: any) {
       console.error('Search error:', error);
-      setSearchError(error.message || 'حدث خطأ أثناء البحث');
+      setSearchError('حدث خطأ أثناء البحث: ' + (error.message || 'خطأ غير معروف'));
       onSearch(null);
     } finally {
       setIsLoading(false);
@@ -93,6 +122,30 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
       handleSearch();
     }
   };
+
+  // دالة لاختبار الاتصال بقاعدة البيانات
+  const testConnection = async () => {
+    try {
+      const { data, error, count } = await supabase
+        .from('results')
+        .select('*', { count: 'exact' })
+        .limit(5);
+      
+      console.log('Database test - Total records:', count);
+      console.log('Database test - Sample data:', data);
+      
+      if (error) {
+        console.error('Database test error:', error);
+      }
+    } catch (error) {
+      console.error('Database connection test failed:', error);
+    }
+  };
+
+  // اختبار الاتصال عند تحميل المكون
+  React.useEffect(() => {
+    testConnection();
+  }, []);
 
   return (
     <section className={`py-16 transition-colors duration-300 ${
@@ -183,6 +236,20 @@ export default function SearchSection({ onSearch, isDarkMode = false }: SearchSe
                 </div>
               </div>
             )}
+
+            {/* Debug Info - يمكن إزالته لاحقاً */}
+            <div className={`mt-4 p-4 rounded-xl text-sm ${
+              isDarkMode 
+                ? 'bg-gray-800/50 text-gray-400' 
+                : 'bg-gray-100 text-gray-600'
+            }`}>
+              <p>💡 نصائح للبحث:</p>
+              <ul className="list-disc list-inside mt-2 space-y-1">
+                <li>تأكد من كتابة الاسم كما هو مسجل في قاعدة البيانات</li>
+                <li>جرب كتابة جزء من الاسم فقط</li>
+                <li>تأكد من وجود اتصال بالإنترنت</li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
